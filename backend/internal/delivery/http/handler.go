@@ -59,6 +59,7 @@ func (h *Handler) InitRouter() *gin.Engine {
 			admin.GET("/orders", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN"), h.GetOrders)
 			admin.GET("/orders/lookup", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN", "STAFF"), h.GetOrderForPayment)
 			admin.PATCH("/orders/:id/status", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN"), h.UpdateOrderStatus)
+			admin.PATCH("/orders/:id/delivery-fee", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN"), h.ConfirmOrderDeliveryFee)
 			admin.POST("/orders/:id/payments", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN", "STAFF"), h.RecordOrderPayment)
 			admin.GET("/inventory", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN", "STAFF"), h.GetBranchInventory)
 			admin.GET("/inventory/transfers", h.RequireRoles("SUPER_ADMIN", "BRANCH_ADMIN"), h.GetStockTransfers)
@@ -268,6 +269,26 @@ func (h *Handler) UpdateOrderStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Order status updated"})
+}
+
+func (h *Handler) ConfirmOrderDeliveryFee(c *gin.Context) {
+	var body struct {
+		DeliveryFee *float64 `json:"delivery_fee" binding:"required,gte=0"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	err := h.svc.ConfirmOrderDeliveryFee(c.Param("id"), *body.DeliveryFee, c.GetString("branch_id"), c.GetString("user_id"))
+	if errors.Is(err, sql.ErrNoRows) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Order not found"})
+		return
+	}
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Delivery fee confirmed"})
 }
 
 func (h *Handler) RecordOrderPayment(c *gin.Context) {

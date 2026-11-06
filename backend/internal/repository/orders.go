@@ -11,6 +11,10 @@ import (
 	"github.com/google/uuid"
 )
 
+func isVehicleCategory(categoryType string) bool {
+	return categoryType == "GASOLINE_VEHICLE" || categoryType == "ELECTRIC_VEHICLE"
+}
+
 func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (*domain.Order, error) {
 	tx, err := db.Begin()
 	if err != nil {
@@ -37,11 +41,16 @@ func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (
 	// 2. Generate Order Number
 	orderNo := fmt.Sprintf("ORD-%s-%d", time.Now().Format("20060102"), time.Now().Unix()%100000)
 	orderID := uuid.New().String()
+	deliveryFeeStatus := "NOT_REQUIRED"
+	if req.DeliveryMethod == "DELIVERY" {
+		deliveryFeeStatus = "TO_CONFIRM"
+	}
 
 	_, err = tx.Exec(`
-		INSERT INTO orders (id, order_no, branch_id, customer_id, payment_method, subtotal, discount_amount, tax_amount, total_amount, status, payment_status, notes, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, 0.00, 0.00, $7, 'PENDING', 'UNPAID', $8, NOW())`,
-		orderID, orderNo, req.BranchID, customerID, req.PaymentMethod, totalAmount, totalAmount, req.Notes)
+		INSERT INTO orders (id, order_no, branch_id, customer_id, payment_method, subtotal, discount_amount, tax_amount, total_amount, delivery_method, delivery_address, delivery_fee_status, status, payment_status, notes, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, 0.00, 0.00, $7, $8, NULLIF($9, ''), $10, 'PENDING', 'UNPAID', $11, NOW())`,
+		orderID, orderNo, req.BranchID, customerID, req.PaymentMethod, totalAmount, totalAmount,
+		req.DeliveryMethod, req.DeliveryAddress, deliveryFeeStatus, req.Notes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to insert order: %w", err)
 	}
@@ -54,9 +63,13 @@ func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (
 			qty = 1
 		}
 
-		var prodName string
+		var prodName, categoryType string
 		var price float64
-		err = tx.QueryRow(`SELECT name, base_price FROM products WHERE id = $1`, it.ProductID).Scan(&prodName, &price)
+		err = tx.QueryRow(`
+			SELECT p.name, p.base_price, c.type
+			FROM products p
+			JOIN categories c ON c.id = p.category_id
+			WHERE p.id = $1`, it.ProductID).Scan(&prodName, &price, &categoryType)
 		if err != nil {
 			return nil, fmt.Errorf("product %s not found: %w", it.ProductID, err)
 		}
@@ -70,7 +83,7 @@ func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (
 			return nil, fmt.Errorf("failed to insert order item: %w", err)
 		}
 
-		// If a specific vehicle unit is assigned, reserve it
+		// Enquiries without a VIN do not reserve a vehicle unit.
 		if it.VehicleItemID != nil && *it.VehicleItemID != "" {
 			result, err := tx.Exec(`
 				UPDATE vehicle_items SET status = 'RESERVED'
@@ -89,8 +102,7 @@ func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (
 			if err := addStockMovement(tx, req.BranchID, it.ProductID, "", "RESERVATION", -qty, ""); err != nil {
 				return nil, err
 			}
-		} else {
-			// Deduct from branch inventory if spare part / bike
+		} else if !isVehicleCategory(categoryType) {
 			result, err := tx.Exec(`
 				UPDATE branch_inventory 
 				SET quantity = quantity - $1, reserved_qty = reserved_qty + $1
@@ -123,25 +135,29 @@ func (db *DB) CreateOrder(req *domain.CreateOrderRequest, totalAmount float64) (
 	}
 
 	return &domain.Order{
-		ID:            orderID,
-		OrderNo:       orderNo,
-		BranchID:      req.BranchID,
-		CustomerID:    customerID,
-		CustomerName:  req.CustomerName,
-		CustomerPhone: req.CustomerPhone,
-		PaymentMethod: req.PaymentMethod,
-		TotalAmount:   totalAmount,
-		Status:        "PENDING",
-		PaymentStatus: "UNPAID",
-		Notes:         req.Notes,
-		CreatedAt:     time.Now(),
+		ID:                orderID,
+		OrderNo:           orderNo,
+		BranchID:          req.BranchID,
+		CustomerID:        customerID,
+		CustomerName:      req.CustomerName,
+		CustomerPhone:     req.CustomerPhone,
+		PaymentMethod:     req.PaymentMethod,
+		DeliveryMethod:    req.DeliveryMethod,
+		DeliveryAddress:   req.DeliveryAddress,
+		DeliveryFeeStatus: deliveryFeeStatus,
+		TotalAmount:       totalAmount,
+		Status:            "PENDING",
+		PaymentStatus:     "UNPAID",
+		Notes:             req.Notes,
+		CreatedAt:         time.Now(),
 	}, nil
 }
 
 func (db *DB) GetOrders(branchID, status string) ([]domain.Order, error) {
 	query := `
 		SELECT o.id, o.order_no, o.branch_id, b.name as branch_name, o.customer_id, c.full_name, c.phone,
-		       o.payment_method, o.subtotal, o.discount_amount, o.tax_amount, o.total_amount,
+		       o.payment_method, o.delivery_method, COALESCE(o.delivery_address, ''), o.delivery_fee,
+		       o.delivery_fee_status, o.subtotal, o.discount_amount, o.tax_amount, o.total_amount,
 		       COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = o.id), 0),
 		       GREATEST(o.total_amount - COALESCE((SELECT SUM(p.amount) FROM payments p WHERE p.order_id = o.id), 0), 0),
 		       o.status, o.payment_status, COALESCE(o.notes, ''), o.created_at
@@ -174,7 +190,8 @@ func (db *DB) GetOrders(branchID, status string) ([]domain.Order, error) {
 	for rows.Next() {
 		var o domain.Order
 		if err := rows.Scan(&o.ID, &o.OrderNo, &o.BranchID, &o.BranchName, &o.CustomerID, &o.CustomerName, &o.CustomerPhone,
-			&o.PaymentMethod, &o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.TotalAmount, &o.PaidAmount, &o.BalanceDue,
+			&o.PaymentMethod, &o.DeliveryMethod, &o.DeliveryAddress, &o.DeliveryFee, &o.DeliveryFeeStatus,
+			&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.TotalAmount, &o.PaidAmount, &o.BalanceDue,
 			&o.Status, &o.PaymentStatus, &o.Notes, &o.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -187,7 +204,8 @@ func (db *DB) GetOrderByReference(reference, branchID string) (*domain.Order, er
 	var order domain.Order
 	err := db.QueryRow(`
 		SELECT o.id, o.order_no, o.branch_id, b.name, o.customer_id, c.full_name, c.phone,
-		       o.payment_method, o.subtotal, o.discount_amount, o.tax_amount, o.total_amount,
+		       o.payment_method, o.delivery_method, COALESCE(o.delivery_address, ''), o.delivery_fee,
+		       o.delivery_fee_status, o.subtotal, o.discount_amount, o.tax_amount, o.total_amount,
 		       COALESCE(SUM(p.amount), 0), GREATEST(o.total_amount - COALESCE(SUM(p.amount), 0), 0),
 		       o.status, o.payment_status, COALESCE(o.notes, ''), o.created_at
 		FROM orders o
@@ -198,7 +216,8 @@ func (db *DB) GetOrderByReference(reference, branchID string) (*domain.Order, er
 		  AND ($2 = '' OR o.branch_id = $2)
 		GROUP BY o.id, b.name, c.full_name, c.phone`, reference, branchID).Scan(
 		&order.ID, &order.OrderNo, &order.BranchID, &order.BranchName, &order.CustomerID,
-		&order.CustomerName, &order.CustomerPhone, &order.PaymentMethod, &order.Subtotal,
+		&order.CustomerName, &order.CustomerPhone, &order.PaymentMethod, &order.DeliveryMethod,
+		&order.DeliveryAddress, &order.DeliveryFee, &order.DeliveryFeeStatus, &order.Subtotal,
 		&order.DiscountAmount, &order.TaxAmount, &order.TotalAmount, &order.PaidAmount,
 		&order.BalanceDue, &order.Status, &order.PaymentStatus, &order.Notes, &order.CreatedAt,
 	)
@@ -206,6 +225,52 @@ func (db *DB) GetOrderByReference(reference, branchID string) (*domain.Order, er
 		return nil, err
 	}
 	return &order, nil
+}
+
+func (db *DB) ConfirmOrderDeliveryFee(id string, fee float64, branchID, actorID string) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var orderBranchID, deliveryMethod, paymentStatus string
+	err = tx.QueryRow(`
+		SELECT branch_id, delivery_method, payment_status
+		FROM orders WHERE id = $1 FOR UPDATE`, id).
+		Scan(&orderBranchID, &deliveryMethod, &paymentStatus)
+	if err != nil {
+		return err
+	}
+	if branchID != "" && orderBranchID != branchID {
+		return sql.ErrNoRows
+	}
+	if deliveryMethod != "DELIVERY" {
+		return fmt.Errorf("delivery fee can only be set for delivery orders")
+	}
+	if paymentStatus != "UNPAID" {
+		return fmt.Errorf("delivery fee cannot be changed after payment has started")
+	}
+	if fee < 0 {
+		return fmt.Errorf("delivery fee cannot be negative")
+	}
+	if _, err := tx.Exec(`
+		UPDATE orders
+		SET delivery_fee = $1,
+		    delivery_fee_status = 'CONFIRMED',
+		    total_amount = subtotal - discount_amount + tax_amount + $1,
+		    status = CASE WHEN status = 'PENDING' THEN 'CONFIRMED' ELSE status END,
+		    updated_at = NOW()
+		WHERE id = $2`, fee, id); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`
+		INSERT INTO audit_logs (id, user_id, branch_id, action, entity_name, entity_id, created_at)
+		VALUES ($1, NULLIF($2, '')::uuid, $3, 'DELIVERY_FEE_CONFIRMED', 'orders', $4, NOW())`,
+		uuid.New().String(), actorID, orderBranchID, id); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (db *DB) UpdateOrderStatus(id, status, branchID, actorID string) error {
@@ -231,20 +296,24 @@ func (db *DB) UpdateOrderStatus(id, status, branchID, actorID string) error {
 
 	if status == "CANCELLED" {
 		rows, err := tx.Query(`
-			SELECT oi.product_id, oi.vehicle_item_id, oi.quantity
-			FROM order_items oi WHERE oi.order_id = $1`, id)
+			SELECT oi.product_id, c.type, oi.vehicle_item_id, oi.quantity
+			FROM order_items oi
+			JOIN products p ON p.id = oi.product_id
+			JOIN categories c ON c.id = p.category_id
+			WHERE oi.order_id = $1`, id)
 		if err != nil {
 			return err
 		}
 		type itemToRelease struct {
-			productID string
-			vehicleID sql.NullString
-			quantity  int
+			productID    string
+			categoryType string
+			vehicleID    sql.NullString
+			quantity     int
 		}
 		var items []itemToRelease
 		for rows.Next() {
 			var item itemToRelease
-			if err := rows.Scan(&item.productID, &item.vehicleID, &item.quantity); err != nil {
+			if err := rows.Scan(&item.productID, &item.categoryType, &item.vehicleID, &item.quantity); err != nil {
 				rows.Close()
 				return err
 			}
@@ -270,13 +339,16 @@ func (db *DB) UpdateOrderStatus(id, status, branchID, actorID string) error {
 						return err
 					}
 				}
-			} else if _, err := tx.Exec(`
-				UPDATE branch_inventory
-				SET quantity = quantity + $1, reserved_qty = GREATEST(reserved_qty - $1, 0), updated_at = NOW()
-				WHERE branch_id = $2 AND product_id = $3`, item.quantity, order.BranchID, item.productID); err != nil {
-				return err
-			} else if err := addStockMovement(tx, order.BranchID, item.productID, "", "RELEASE", item.quantity, ""); err != nil {
-				return err
+			} else if !isVehicleCategory(item.categoryType) {
+				if _, err := tx.Exec(`
+					UPDATE branch_inventory
+					SET quantity = quantity + $1, reserved_qty = GREATEST(reserved_qty - $1, 0), updated_at = NOW()
+					WHERE branch_id = $2 AND product_id = $3`, item.quantity, order.BranchID, item.productID); err != nil {
+					return err
+				}
+				if err := addStockMovement(tx, order.BranchID, item.productID, "", "RELEASE", item.quantity, ""); err != nil {
+					return err
+				}
 			}
 		}
 	} else if status == "COMPLETED" {

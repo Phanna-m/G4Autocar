@@ -118,6 +118,20 @@ func (s *Service) CalculateInstallment(req domain.LoanCalculationRequest) domain
 
 // 3. Orders & Checkout
 func (s *Service) PlaceOrder(req *domain.CreateOrderRequest) (*domain.Order, error) {
+	if req.DeliveryMethod == "" {
+		req.DeliveryMethod = "PICKUP"
+	}
+	switch req.DeliveryMethod {
+	case "PICKUP":
+		req.DeliveryAddress = ""
+	case "DELIVERY":
+		if req.DeliveryAddress == "" {
+			return nil, fmt.Errorf("delivery address is required")
+		}
+	default:
+		return nil, fmt.Errorf("invalid delivery method")
+	}
+
 	// Calculate subtotal
 	var total float64
 	for _, it := range req.Items {
@@ -278,6 +292,10 @@ func (s *Service) GetOrders(branchID, status string) ([]domain.Order, error) {
 
 func (s *Service) GetOrderByReference(reference, branchID string) (*domain.Order, error) {
 	return s.repo.GetOrderByReference(reference, branchID)
+}
+
+func (s *Service) ConfirmOrderDeliveryFee(id string, fee float64, branchID, actorID string) error {
+	return s.repo.ConfirmOrderDeliveryFee(id, fee, branchID, actorID)
 }
 
 func (s *Service) UpdateOrderStatus(id, status, branchID, actorID string) error {

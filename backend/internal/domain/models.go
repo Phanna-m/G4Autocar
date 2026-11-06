@@ -182,26 +182,30 @@ type Customer struct {
 }
 
 type Order struct {
-	ID              string      `json:"id"`
-	OrderNo         string      `json:"order_no"`
-	BranchID        string      `json:"branch_id"`
-	BranchName      string      `json:"branch_name,omitempty"`
-	CustomerID      string      `json:"customer_id"`
-	CustomerName    string      `json:"customer_name,omitempty"`
-	CustomerPhone   string      `json:"customer_phone,omitempty"`
-	HandledByUserID *string     `json:"handled_by_user_id,omitempty"`
-	PaymentMethod   string      `json:"payment_method"` // FULL_PAYMENT_CASH, FULL_PAYMENT_KHQR, INSTALLMENT, TRADE_IN
-	Subtotal        float64     `json:"subtotal"`
-	DiscountAmount  float64     `json:"discount_amount"`
-	TaxAmount       float64     `json:"tax_amount"`
-	TotalAmount     float64     `json:"total_amount"`
-	PaidAmount      float64     `json:"paid_amount"`
-	BalanceDue      float64     `json:"balance_due"`
-	Status          string      `json:"status"` // PENDING, CONFIRMED, PROCESSING, READY_FOR_PICKUP, COMPLETED, CANCELLED
-	PaymentStatus   string      `json:"payment_status"`
-	Notes           string      `json:"notes,omitempty"`
-	Items           []OrderItem `json:"items,omitempty"`
-	CreatedAt       time.Time   `json:"created_at"`
+	ID                string      `json:"id"`
+	OrderNo           string      `json:"order_no"`
+	BranchID          string      `json:"branch_id"`
+	BranchName        string      `json:"branch_name,omitempty"`
+	CustomerID        string      `json:"customer_id"`
+	CustomerName      string      `json:"customer_name,omitempty"`
+	CustomerPhone     string      `json:"customer_phone,omitempty"`
+	HandledByUserID   *string     `json:"handled_by_user_id,omitempty"`
+	PaymentMethod     string      `json:"payment_method"` // FULL_PAYMENT_CASH, FULL_PAYMENT_KHQR, INSTALLMENT, TRADE_IN
+	DeliveryMethod    string      `json:"delivery_method"`
+	DeliveryAddress   string      `json:"delivery_address,omitempty"`
+	DeliveryFee       float64     `json:"delivery_fee"`
+	DeliveryFeeStatus string      `json:"delivery_fee_status"`
+	Subtotal          float64     `json:"subtotal"`
+	DiscountAmount    float64     `json:"discount_amount"`
+	TaxAmount         float64     `json:"tax_amount"`
+	TotalAmount       float64     `json:"total_amount"`
+	PaidAmount        float64     `json:"paid_amount"`
+	BalanceDue        float64     `json:"balance_due"`
+	Status            string      `json:"status"` // PENDING, CONFIRMED, PROCESSING, READY_FOR_PICKUP, COMPLETED, CANCELLED
+	PaymentStatus     string      `json:"payment_status"`
+	Notes             string      `json:"notes,omitempty"`
+	Items             []OrderItem `json:"items,omitempty"`
+	CreatedAt         time.Time   `json:"created_at"`
 }
 
 type OrderItem struct {
@@ -291,13 +295,15 @@ type LoanCalculationResponse struct {
 }
 
 type CreateOrderRequest struct {
-	BranchID      string               `json:"branch_id" binding:"required"`
-	CustomerName  string               `json:"customer_name" binding:"required"`
-	CustomerPhone string               `json:"customer_phone" binding:"required"`
-	CustomerEmail string               `json:"customer_email"`
-	PaymentMethod string               `json:"payment_method" binding:"required"`
-	Notes         string               `json:"notes"`
-	Items         []CreateOrderItemReq `json:"items" binding:"required,min=1"`
+	BranchID        string               `json:"branch_id" binding:"required"`
+	CustomerName    string               `json:"customer_name" binding:"required"`
+	CustomerPhone   string               `json:"customer_phone" binding:"required"`
+	CustomerEmail   string               `json:"customer_email"`
+	PaymentMethod   string               `json:"payment_method" binding:"required"`
+	DeliveryMethod  string               `json:"delivery_method"`
+	DeliveryAddress string               `json:"delivery_address"`
+	Notes           string               `json:"notes"`
+	Items           []CreateOrderItemReq `json:"items" binding:"required,min=1"`
 }
 
 type CreateOrderItemReq struct {

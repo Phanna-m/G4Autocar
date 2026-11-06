@@ -13,7 +13,7 @@
 | Layer | Technologies |
 | :--- | :--- |
 | **Frontend** | Next.js 15, TypeScript, Tailwind CSS, Lucide Icons, Glassmorphism UI |
-| **Backend** | Go (Golang 1.24+), Gin Web Framework, JWT RBAC, pq (PostgreSQL Driver) |
+| **Backend** | Go (Golang 1.27.1+), Gin Web Framework, JWT RBAC, pq (PostgreSQL Driver) |
 | **Database** | **Supabase (Cloud PostgreSQL)** - No Docker required! |
 | **Notifications** | Telegram Bot API (Instant Alerts for Orders, Trade-In, Loans & Low Stock) |
 
@@ -45,6 +45,7 @@ DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabas
 ## ⚡ One-Command Startup (បញ្ជាតែមួយដំណើរការប្រព័ន្ធទាំងមូល)
 
 ដោយសារតែ Database ស្ថិតនៅលើ Cloud (Supabase) លោកអ្នកពុំបាច់បើក Docker ឡើយ! គ្រាន់តែ run command មួយគត់៖
+> ត្រូវដំឡើង Go និង Node.js មុន។ ពេលចាប់ផ្ដើមលើកដំបូង `start.bat` នឹងដំឡើង Frontend dependencies ដោយស្វ័យប្រវត្តិ។
 
 ### វិធីទី ១៖ ប្រើ Batch File (ងាយស្រួលបំផុត - Double-Click ឬ Terminal)
 ```cmd
@@ -82,7 +83,8 @@ Backend API ដំណើរការនៅ: `http://localhost:8080/api/v1`
 
 ### 2. Run Frontend (Port 3000)
 ```powershell
-cd D:\Project\vehicle-commerce\frontend
+cd C:\xampp\htdocs\vehicle-commerce\frontend
+npm install # ត្រូវធ្វើម្ដងដំបូង ឬក្រោយពេល dependencies ផ្លាស់ប្ដូរ
 npm run dev
 ```
 បើក Browser នៅ: `http://localhost:3000`
@@ -90,18 +92,22 @@ npm run dev
 - User storefront: `http://localhost:3000/`
 - Admin dashboard: `http://localhost:3000/admin`
 
-ចូល Admin ដោយប្រើគណនីដែលមានតួនាទី `SUPER_ADMIN`, `BRANCH_ADMIN`, ឬ `STAFF`។ គណនីសាកល្បងនៅក្នុង seed data ប្រើ password `admin123`; សូមប្តូរវាមុនប្រើប្រាស់ពិត។
+ចូល Admin ដោយប្រើ **username ឬ email** របស់គណនីដែលមានតួនាទី `SUPER_ADMIN`, `BRANCH_ADMIN`, ឬ `STAFF`។ សម្រាប់ទិន្នន័យសាកល្បងដែលបានបញ្ចូលពី migrations ប្រើ `superadmin` (ឬ `admin@vehiclemall.com`) ជាមួយ password `admin123`។ គណនីទាំងនេះសម្រាប់សាកល្បងប៉ុណ្ណោះ—សូមប្តូរពាក្យសម្ងាត់ និងបិទគណនី demo មុនប្រើប្រាស់ពិត។
+
+បើឃើញ `invalid credentials` សូមពិនិត្យថា username/email មាននៅក្នុងតារាង `users` ហើយពាក្យសម្ងាត់ត្រូវគ្នា។ អ៊ីមែលដែលមិនមានក្នុងតារាង `users` មិនអាចប្រើចូលបានទេ លុះត្រាតែបានបង្កើតគណនីនោះក្នុងប្រព័ន្ធ។
+
+សំណើពី Checkout បង្កើត order ស្ថានភាព `PENDING` ដើម្បីឲ្យក្រុមការងារទាក់ទងបញ្ជាក់ព័ត៌មាន។ អ្នកទិញអាចជ្រើសទទួលនៅសាខា ឬដឹកដោយហាង។ សម្រាប់ការដឹកដោយហាង តម្លៃដឹកតាមទីតាំងមិនគិតជាមុនទេ៖ Admin ត្រូវបញ្ចូល និងបញ្ជាក់ថ្លៃក្នុង Order management ដើម្បីកែចំនួនសរុប មុនពេលទទួលការទូទាត់។ Wishlist រក្សាទុកក្នុង browser របស់អ្នកប្រើ។ ការកក់នេះមិនកាត់ស្តុករថយន្តភ្លាមៗទេ ព្រោះស្តុកពិត និងតម្លៃត្រូវបញ្ជាក់ដោយសាខាជាមុន។
 
 ---
 
 ## 🔑 Default Accounts (គណនីសាកល្បង)
 
-| តួនាទី (Role) | Username | Password | សិទ្ធិ និងការងារ |
+| តួនាទី (Role) | Username / Email | Password | សិទ្ធិ និងការងារ |
 | :--- | :--- | :--- | :--- |
-| **Super Admin** | `superadmin` | `admin123` | គ្រប់គ្រងសាខាទាំងអស់, របាយការណ៍រួម |
-| **Branch Manager** | `pp_manager` | `admin123` | គ្រប់គ្រងសាខាភ្នំពេញ, ស្តុក, បុគ្គលិក |
-| **Staff Sales** | `staff_dara` | `admin123` | បង្កើត Order, ពិនិត្យ Trade-in & Loan |
-| **Customer** | `customer_visal` | `admin123` | មើលទំនិញ, កក់រថយន្ត, ស្នើបង់រំលោះ |
+| **Super Admin** | `superadmin` / `admin@vehiclemall.com` | `admin123` | គ្រប់គ្រងសាខាទាំងអស់, របាយការណ៍រួម |
+| **Branch Manager** | `pp_manager` / `branch.pp@vehiclemall.com` | `admin123` | គ្រប់គ្រងសាខាភ្នំពេញ, ស្តុក, បុគ្គលិក |
+| **Staff Sales** | `staff_dara` / `dara.sales@vehiclemall.com` | `admin123` | បង្កើត Order, ពិនិត្យ Trade-in & Loan |
+| **Customer** | `customer_visal` / `visal.customer@gmail.com` | `admin123` | មើលទំនិញ, កក់រថយន្ត, ស្នើបង់រំលោះ |
 
 ---
 

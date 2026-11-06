@@ -13,7 +13,26 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PS
 
 # 2. Start Next.js Frontend
 Write-Host "[2/2] Starting Next.js Frontend on port 3000..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$PSScriptRoot\frontend'; Write-Host '⚡ Next.js Frontend (Port 3000)' -ForegroundColor Cyan; npm run dev"
+$frontendPath = Join-Path $PSScriptRoot "frontend"
+if (-not (Test-Path (Join-Path $frontendPath "package.json"))) {
+    Write-Host "Frontend files are missing from the frontend folder." -ForegroundColor Red
+    exit 1
+}
+if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    Write-Host "Node.js and npm are required to start the frontend. Install Node.js, then reopen this terminal." -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-Path (Join-Path $frontendPath "node_modules"))) {
+    Push-Location $frontendPath
+    npm install
+    $installExitCode = $LASTEXITCODE
+    Pop-Location
+    if ($installExitCode -ne 0) {
+        Write-Host "Frontend dependency installation failed." -ForegroundColor Red
+        exit $installExitCode
+    }
+}
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$frontendPath'; Write-Host '⚡ Next.js Frontend (Port 3000)' -ForegroundColor Cyan; npm run dev"
 
 # Wait and open browser
 Start-Sleep -Seconds 3

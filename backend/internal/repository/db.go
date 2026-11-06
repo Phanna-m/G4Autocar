@@ -11,7 +11,8 @@ import (
 	"vehicle-commerce/backend/internal/config"
 	"vehicle-commerce/backend/internal/domain"
 
-	_ "github.com/lib/pq"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 type DB struct {
@@ -27,10 +28,15 @@ func NewDB(cfg *config.Config) (*DB, error) {
 			cfg.DBHost, cfg.DBPort, cfg.DBUser, cfg.DBPassword, cfg.DBName, cfg.DBSSLMode)
 	}
 
-	db, err := sql.Open("postgres", connStr)
+	pgConfig, err := pgx.ParseConfig(connStr)
 	if err != nil {
-		return nil, fmt.Errorf("unable to connect to database: %w", err)
+		return nil, fmt.Errorf("unable to parse database connection: %w", err)
 	}
+
+	// Supabase's transaction pooler can switch PostgreSQL backends between
+	// requests, so avoid server-side prepared statements on pooled connections.
+	pgConfig.DefaultQueryExecMode = pgx.QueryExecModeSimpleProtocol
+	db := stdlib.OpenDB(*pgConfig)
 
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(10)
@@ -82,13 +88,21 @@ func (db *DB) RunMigrations(migrationDir string) error {
 
 func migrationFiles(setupApplied bool) []string {
 	if setupApplied {
-		return []string{"000004_admin_modules.sql"}
+		return []string{
+			"000004_admin_modules.sql",
+			"000005_seed_more_vehicles.sql",
+			"000006_car_only_catalog.sql",
+			"000007_checkout_delivery.sql",
+		}
 	}
 	return []string{
 		"000001_init_schema.sql",
 		"000002_seed_data.sql",
 		"000003_seed_toyota_catalog.sql",
 		"000004_admin_modules.sql",
+		"000005_seed_more_vehicles.sql",
+		"000006_car_only_catalog.sql",
+		"000007_checkout_delivery.sql",
 	}
 }
 
@@ -256,10 +270,10 @@ func (db *DB) GetBranchInventory(branchID string) ([]domain.BranchInventory, err
 
 	var args []interface{}
 	if branchID != "" {
-		query += " AND bi.branch_id = $1"
+		query += " AND stock.branch_id = $1"
 		args = append(args, branchID)
 	}
-	query += " ORDER BY bi.quantity ASC"
+	query += " ORDER BY stock.quantity ASC"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
